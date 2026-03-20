@@ -117,6 +117,62 @@
         background: #f3f4f6;
       }
 
+      .bot-result {
+        margin-right: auto;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+      }
+
+      .result-title {
+        margin: 0 0 8px;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .result-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px 10px;
+        font-size: 14px;
+      }
+
+      .result-label {
+        color: #475569;
+      }
+
+      .result-value {
+        font-weight: 600;
+      }
+
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .badge.ok {
+        color: #166534;
+        background: #dcfce7;
+      }
+
+      .badge.no {
+        color: #991b1b;
+        background: #fee2e2;
+      }
+
+      .reason {
+        margin-top: 8px;
+        font-size: 14px;
+      }
+
+      .actions {
+        margin-top: 8px;
+        padding-left: 18px;
+        font-size: 14px;
+      }
+
       .error {
         color: #b91c1c;
         font-size: 14px;
@@ -202,6 +258,7 @@
           <select id="targetSelect" multiple size="6">
             <option value="花生" selected>花生</option>
             <option value="海鮮" selected>海鮮</option>
+            <option value="人類">人類</option>
             <option value="甲殼類">甲殼類</option>
             <option value="牛奶">牛奶</option>
             <option value="蛋">蛋</option>
@@ -273,18 +330,33 @@
         { name: "範例：蝦味先", color: "#ffe4e6", icon: "🦐" },
         { name: "範例：花生糖", color: "#fff7cc", icon: "🥜" },
         { name: "範例：綜合堅果", color: "#efe7ff", icon: "🥜" },
+        { name: "範例：海鮮泡麵", color: "#e0f2fe", icon: "🍜" },
+        { name: "範例：牛奶餅乾", color: "#fef3c7", icon: "🥛" },
+        { name: "範例：蛋糕", color: "#fae8ff", icon: "🍰" },
+        { name: "範例：芝麻包", color: "#f1f5f9", icon: "⚫" },
+        { name: "範例：大豆飲", color: "#dcfce7", icon: "🫘" },
+        { name: "範例：人類（測試）", color: "#fee2e2", icon: "🧑" },
       ];
 
       function createSampleImageDataUrl(title, bg, icon) {
-        const svg = `
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480">
-            <rect width="640" height="480" fill="${bg}" />
-            <text x="50%" y="43%" text-anchor="middle" font-size="84">${icon}</text>
-            <text x="50%" y="58%" text-anchor="middle" font-size="36" fill="#334155" font-family="sans-serif">${title}</text>
-            <text x="50%" y="68%" text-anchor="middle" font-size="22" fill="#64748b" font-family="sans-serif">Sample Image</text>
-          </svg>
-        `;
-        return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+        const canvas = document.createElement("canvas");
+        canvas.width = 640;
+        canvas.height = 480;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#334155";
+        ctx.font = "80px sans-serif";
+        ctx.fillText(icon, canvas.width / 2, 200);
+        ctx.font = "bold 36px sans-serif";
+        ctx.fillText(title, canvas.width / 2, 290);
+        ctx.fillStyle = "#64748b";
+        ctx.font = "22px sans-serif";
+        ctx.fillText("Sample Image", canvas.width / 2, 340);
+
+        return canvas.toDataURL("image/png");
       }
 
       function updatePreview(url, source) {
@@ -366,6 +438,44 @@
         chatbox.scrollTop = chatbox.scrollHeight;
       }
 
+      function appendResultCard(data) {
+        const line = document.createElement("div");
+        line.className = "msg bot-result";
+
+        const match = Boolean(data.target_match);
+        const confidence = Number.isFinite(Number(data.confidence)) ? Math.round(Number(data.confidence) * 100) : 0;
+        const matched = Array.isArray(data.matched_targets) ? data.matched_targets.join("、") : "";
+        const unmatched = Array.isArray(data.unmatched_targets) ? data.unmatched_targets.join("、") : "";
+        const nextActions = Array.isArray(data.next_actions) ? data.next_actions : [];
+
+        line.innerHTML = `
+          <div class="result-title">辨識結果</div>
+          <div class="result-grid">
+            <div class="result-label">主體</div>
+            <div class="result-value">${data.detected_subject || "未知"}</div>
+            <div class="result-label">目標比對</div>
+            <div class="result-value"><span class="badge ${match ? "ok" : "no"}">${match ? "符合" : "不符合"}</span></div>
+            <div class="result-label">信心</div>
+            <div class="result-value">${confidence}%</div>
+            <div class="result-label">風險等級</div>
+            <div class="result-value">${data.risk_level || "中"}</div>
+            <div class="result-label">命中目標</div>
+            <div class="result-value">${matched || "無"}</div>
+            <div class="result-label">未命中目標</div>
+            <div class="result-value">${unmatched || "無"}</div>
+          </div>
+          <div class="reason"><strong>判斷依據：</strong>${data.reason || data.reply || "無"}</div>
+          ${
+            nextActions.length
+              ? `<div><strong>建議下一步：</strong><ul class="actions">${nextActions.map((x) => `<li>${x}</li>`).join("")}</ul></div>`
+              : ""
+          }
+        `;
+
+        chatbox.appendChild(line);
+        chatbox.scrollTop = chatbox.scrollHeight;
+      }
+
       async function login() {
         const user = usernameEl.value.trim();
         const pass = passwordEl.value;
@@ -406,29 +516,36 @@
         sendBtn.disabled = true;
 
         try {
-          const composedMessage = [
-            `請針對下列目標做過敏原檢查：${targets.join("、") || "未選擇目標"}`,
-            `圖片來源：${selectedImageSource}`,
-            selectedImageDataUrl
-              ? "已由前端選擇圖片（目前先不傳影像二進位，僅先傳來源摘要）"
-              : "目前沒有選擇圖片",
-            `使用者訊息：${message || "請先做初步判斷與需要補充的資訊"}`,
-          ].join("\n");
-
           const res = await fetch("/chat", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ message: composedMessage }),
+            body: JSON.stringify({
+              message,
+              user_message: message,
+              targets,
+              image_source: selectedImageSource,
+              image_data_url: selectedImageDataUrl,
+            }),
           });
 
-          const data = await res.json();
+          const raw = await res.text();
+          let data;
+          try {
+            data = raw ? JSON.parse(raw) : {};
+          } catch (e) {
+            throw new Error(`伺服器回傳非 JSON（HTTP ${res.status}）`);
+          }
           if (!res.ok) {
             throw new Error(data.detail || "聊天失敗");
           }
 
-          appendMessage("bot", data.reply || "(沒有回覆)");
+          if ("detected_subject" in data || "target_match" in data) {
+            appendResultCard(data);
+          } else {
+            appendMessage("bot", data.reply || "(沒有回覆)");
+          }
         } catch (err) {
           chatError.textContent = `錯誤：${err.message}`;
         } finally {
