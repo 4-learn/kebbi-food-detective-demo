@@ -50,6 +50,7 @@
       }
 
       input,
+      select,
       button {
         border-radius: 10px;
         border: 1px solid var(--line);
@@ -59,6 +60,11 @@
 
       input {
         width: 100%;
+      }
+
+      select {
+        width: 100%;
+        background: #fff;
       }
 
       button {
@@ -120,6 +126,62 @@
       .hidden {
         display: none;
       }
+
+      .subcard {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+        background: #fff;
+      }
+
+      .label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+
+      .muted {
+        color: #6b7280;
+        font-size: 13px;
+      }
+
+      .preview {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fafafa;
+        object-fit: cover;
+        aspect-ratio: 4 / 3;
+      }
+
+      .tool-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip {
+        background: #ecfeff;
+        color: #155e75;
+        border: 1px solid #a5f3fc;
+      }
+
+      .chip.active {
+        background: #cffafe;
+        border-color: #06b6d4;
+      }
+
+      .samples {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 8px;
+      }
+
+      @media (max-width: 640px) {
+        .row {
+          grid-template-columns: 1fr;
+        }
+      }
     </style>
   </head>
   <body>
@@ -135,6 +197,43 @@
 
       <section id="chatCard" class="card stack hidden">
         <h1>聊天測試</h1>
+        <section class="subcard stack">
+          <label class="label" for="targetSelect">過敏原測試標的（可複選）</label>
+          <select id="targetSelect" multiple size="6">
+            <option value="花生" selected>花生</option>
+            <option value="海鮮" selected>海鮮</option>
+            <option value="甲殼類">甲殼類</option>
+            <option value="牛奶">牛奶</option>
+            <option value="蛋">蛋</option>
+            <option value="堅果">堅果</option>
+            <option value="芝麻">芝麻</option>
+            <option value="大豆">大豆</option>
+          </select>
+          <p class="muted">預設已選：花生、海鮮</p>
+        </section>
+
+        <section class="subcard stack">
+          <span class="label">照片來源</span>
+          <video id="camera" class="preview hidden" autoplay playsinline muted></video>
+          <img id="previewImage" class="preview" alt="尚未選擇圖片" />
+          <canvas id="captureCanvas" class="hidden"></canvas>
+          <div class="tool-row">
+            <button id="openCameraBtn" type="button">開啟 Webcam</button>
+            <button id="captureBtn" type="button">拍照</button>
+            <button id="stopCameraBtn" type="button">關閉 Webcam</button>
+            <label for="uploadInput" class="chip" style="padding: 10px 12px; border-radius: 10px; cursor: pointer"
+              >上傳圖片</label
+            >
+            <input id="uploadInput" type="file" accept="image/*" class="hidden" />
+          </div>
+          <div id="imageMeta" class="muted">目前：尚未選擇圖片</div>
+        </section>
+
+        <section class="subcard stack">
+          <span class="label">範例圖片</span>
+          <div id="sampleButtons" class="samples"></div>
+        </section>
+
         <div id="chatbox" class="chatbox"></div>
         <div class="row">
           <input id="messageInput" type="text" placeholder="輸入訊息..." />
@@ -155,6 +254,109 @@
       const messageInput = document.getElementById("messageInput");
       const sendBtn = document.getElementById("sendBtn");
       const chatError = document.getElementById("chatError");
+      const targetSelect = document.getElementById("targetSelect");
+      const camera = document.getElementById("camera");
+      const previewImage = document.getElementById("previewImage");
+      const captureCanvas = document.getElementById("captureCanvas");
+      const openCameraBtn = document.getElementById("openCameraBtn");
+      const captureBtn = document.getElementById("captureBtn");
+      const stopCameraBtn = document.getElementById("stopCameraBtn");
+      const uploadInput = document.getElementById("uploadInput");
+      const imageMeta = document.getElementById("imageMeta");
+      const sampleButtons = document.getElementById("sampleButtons");
+
+      let cameraStream = null;
+      let selectedImageDataUrl = "";
+      let selectedImageSource = "尚未選擇";
+
+      const sampleImages = [
+        { name: "範例：蝦味先", color: "#ffe4e6", icon: "🦐" },
+        { name: "範例：花生糖", color: "#fff7cc", icon: "🥜" },
+        { name: "範例：綜合堅果", color: "#efe7ff", icon: "🥜" },
+      ];
+
+      function createSampleImageDataUrl(title, bg, icon) {
+        const svg = `
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480">
+            <rect width="640" height="480" fill="${bg}" />
+            <text x="50%" y="43%" text-anchor="middle" font-size="84">${icon}</text>
+            <text x="50%" y="58%" text-anchor="middle" font-size="36" fill="#334155" font-family="sans-serif">${title}</text>
+            <text x="50%" y="68%" text-anchor="middle" font-size="22" fill="#64748b" font-family="sans-serif">Sample Image</text>
+          </svg>
+        `;
+        return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      }
+
+      function updatePreview(url, source) {
+        selectedImageDataUrl = url || "";
+        selectedImageSource = source || "尚未選擇";
+        previewImage.src = selectedImageDataUrl || "";
+        previewImage.alt = selectedImageDataUrl ? source : "尚未選擇圖片";
+        imageMeta.textContent = `目前：${selectedImageSource}`;
+      }
+
+      function getSelectedTargets() {
+        return Array.from(targetSelect.selectedOptions).map((opt) => opt.value);
+      }
+
+      async function startCamera() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          chatError.textContent = "你的瀏覽器不支援 webcam。";
+          return;
+        }
+        try {
+          cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "environment" } },
+            audio: false,
+          });
+          camera.srcObject = cameraStream;
+          camera.classList.remove("hidden");
+          previewImage.classList.add("hidden");
+          chatError.textContent = "";
+        } catch (err) {
+          chatError.textContent = `無法開啟鏡頭：${err.message}`;
+        }
+      }
+
+      function stopCamera() {
+        if (cameraStream) {
+          cameraStream.getTracks().forEach((track) => track.stop());
+          cameraStream = null;
+        }
+        camera.srcObject = null;
+        camera.classList.add("hidden");
+        previewImage.classList.remove("hidden");
+      }
+
+      function capturePhoto() {
+        if (!cameraStream || !camera.videoWidth || !camera.videoHeight) {
+          chatError.textContent = "鏡頭尚未準備好，請先開啟 webcam。";
+          return;
+        }
+        captureCanvas.width = camera.videoWidth;
+        captureCanvas.height = camera.videoHeight;
+        const ctx = captureCanvas.getContext("2d");
+        ctx.drawImage(camera, 0, 0);
+        updatePreview(captureCanvas.toDataURL("image/jpeg", 0.92), "webcam 拍照");
+        stopCamera();
+      }
+
+      function renderSampleButtons() {
+        sampleButtons.innerHTML = "";
+        sampleImages.forEach((sample) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "chip";
+          btn.textContent = sample.name;
+          btn.addEventListener("click", () => {
+            const url = createSampleImageDataUrl(sample.name, sample.color, sample.icon);
+            updatePreview(url, sample.name);
+            Array.from(sampleButtons.children).forEach((el) => el.classList.remove("active"));
+            btn.classList.add("active");
+          });
+          sampleButtons.appendChild(btn);
+        });
+      }
 
       function appendMessage(role, text) {
         const line = document.createElement("div");
@@ -194,20 +396,31 @@
 
       async function sendMessage() {
         const message = messageInput.value.trim();
-        if (!message) return;
+        const targets = getSelectedTargets();
+        if (!message && !selectedImageDataUrl) return;
 
         chatError.textContent = "";
         messageInput.value = "";
-        appendMessage("me", message);
+        const visualNote = selectedImageDataUrl ? `\n圖片：${selectedImageSource}` : "";
+        appendMessage("me", `${message || "請協助辨識這張圖片"}\n目標：${targets.join("、") || "未選擇"}${visualNote}`);
         sendBtn.disabled = true;
 
         try {
+          const composedMessage = [
+            `請針對下列目標做過敏原檢查：${targets.join("、") || "未選擇目標"}`,
+            `圖片來源：${selectedImageSource}`,
+            selectedImageDataUrl
+              ? "已由前端選擇圖片（目前先不傳影像二進位，僅先傳來源摘要）"
+              : "目前沒有選擇圖片",
+            `使用者訊息：${message || "請先做初步判斷與需要補充的資訊"}`,
+          ].join("\n");
+
           const res = await fetch("/chat", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ message }),
+            body: JSON.stringify({ message: composedMessage }),
           });
 
           const data = await res.json();
@@ -224,14 +437,30 @@
         }
       }
 
+      renderSampleButtons();
+      updatePreview("", "尚未選擇圖片");
       loginBtn.addEventListener("click", login);
       passwordEl.addEventListener("keydown", (e) => {
         if (e.key === "Enter") login();
+      });
+      openCameraBtn.addEventListener("click", startCamera);
+      stopCameraBtn.addEventListener("click", stopCamera);
+      captureBtn.addEventListener("click", capturePhoto);
+      uploadInput.addEventListener("change", () => {
+        const file = uploadInput.files && uploadInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          updatePreview(String(reader.result || ""), `本機上傳：${file.name}`);
+          Array.from(sampleButtons.children).forEach((el) => el.classList.remove("active"));
+        };
+        reader.readAsDataURL(file);
       });
       sendBtn.addEventListener("click", sendMessage);
       messageInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") sendMessage();
       });
+      window.addEventListener("beforeunload", stopCamera);
     </script>
   </body>
 </html>
