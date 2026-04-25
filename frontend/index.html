@@ -23,7 +23,7 @@
         min-height: 100vh;
         font-family: "Noto Sans TC", "Microsoft JhengHei", sans-serif;
         color: var(--ink);
-        background: radial-gradient(circle at 20% 0%, #fff9e6, var(--bg) 45%);
+        background: linear-gradient(135deg, #fff2a8 0%, #ffd4e5 52%, #ffeaa7 100%);
       }
 
       .wrap {
@@ -39,6 +39,30 @@
         padding: 16px;
       }
 
+      .tier {
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        padding: 12px;
+      }
+
+      .tier-title {
+        margin: 0 0 8px;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .tier-1 {
+        background: #fff7fb;
+      }
+
+      .tier-2 {
+        background: #fffdf3;
+      }
+
+      .tier-3 {
+        background: #fff;
+      }
+
       h1 {
         margin: 0 0 12px;
         font-size: 24px;
@@ -50,6 +74,7 @@
       }
 
       input,
+      select,
       button {
         border-radius: 10px;
         border: 1px solid var(--line);
@@ -59,6 +84,11 @@
 
       input {
         width: 100%;
+      }
+
+      select {
+        width: 100%;
+        background: #fff;
       }
 
       button {
@@ -120,11 +150,35 @@
       .hidden {
         display: none;
       }
+
+      .preview {
+        width: 100%;
+        max-height: 260px;
+        object-fit: contain;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      .camera {
+        width: 100%;
+        max-height: 260px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #000;
+      }
+
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
     </style>
   </head>
   <body>
     <main class="wrap">
-      <section id="loginCard" class="card stack">
+      <section id="loginCard" class="card stack tier tier-1">
+        <p class="tier-title">第一層：登入</p>
         <h1>鯉魚過敏原小助手</h1>
         <p class="hint">請先登入，登入後就可以開始聊天。</p>
         <input id="username" type="text" placeholder="帳號" autocomplete="username" />
@@ -134,13 +188,42 @@
       </section>
 
       <section id="chatCard" class="card stack hidden">
-        <h1>聊天測試</h1>
-        <div id="chatbox" class="chatbox"></div>
-        <div class="row">
-          <input id="messageInput" type="text" placeholder="輸入訊息..." />
-          <button id="sendBtn" type="button">送出</button>
+        <h1>三層互動模式</h1>
+
+        <div class="tier tier-1 stack">
+          <p class="tier-title">第一層：選擇過敏原</p>
+          <select id="allergenSelect" multiple size="6">
+            <option value="花生" selected>花生</option>
+            <option value="海鮮" selected>海鮮</option>
+            <option value="甲殼類">甲殼類</option>
+            <option value="牛奶">牛奶</option>
+            <option value="蛋">蛋</option>
+            <option value="堅果">堅果</option>
+          </select>
+          <p class="hint">可複選，預設：花生、海鮮。</p>
         </div>
-        <div id="chatError" class="error"></div>
+
+        <div class="tier tier-2 stack">
+          <p class="tier-title">第二層：上傳圖片</p>
+          <div class="actions">
+            <input id="imageInput" type="file" accept="image/*" capture="environment" />
+            <button id="startCameraBtn" type="button">開啟相機</button>
+            <button id="takePhotoBtn" type="button" class="hidden">拍照</button>
+          </div>
+          <video id="cameraPreview" class="camera hidden" autoplay playsinline></video>
+          <img id="imagePreview" class="preview hidden" alt="圖片預覽" />
+          <div id="imageMeta" class="hint">尚未上傳圖片</div>
+        </div>
+
+        <div class="tier tier-3 stack">
+          <p class="tier-title">第三層：討論回答過敏原</p>
+          <div class="row">
+            <input id="messageInput" type="text" placeholder="輸入訊息..." />
+            <button id="sendBtn" type="button">送出</button>
+          </div>
+          <div id="chatbox" class="chatbox"></div>
+          <div id="chatError" class="error"></div>
+        </div>
       </section>
     </main>
 
@@ -155,6 +238,16 @@
       const messageInput = document.getElementById("messageInput");
       const sendBtn = document.getElementById("sendBtn");
       const chatError = document.getElementById("chatError");
+      window.LIYU_GROUP = new URLSearchParams(window.location.search).get("group") || null;
+      const allergenSelect = document.getElementById("allergenSelect");
+      const imageInput = document.getElementById("imageInput");
+      const imagePreview = document.getElementById("imagePreview");
+      const imageMeta = document.getElementById("imageMeta");
+      const startCameraBtn = document.getElementById("startCameraBtn");
+      const takePhotoBtn = document.getElementById("takePhotoBtn");
+      const cameraPreview = document.getElementById("cameraPreview");
+      let uploadedImageName = "";
+      let cameraStream = null;
 
       function appendMessage(role, text) {
         const line = document.createElement("div");
@@ -183,7 +276,7 @@
           loginError.textContent = "";
           loginCard.classList.add("hidden");
           chatCard.classList.remove("hidden");
-          appendMessage("bot", "嗨！我是過敏原小助手，今天想聊什麼食物？");
+          appendMessage("bot", "你好！我是過敏原小助手，今天想聊什麼食物？");
           messageInput.focus();
         } catch (err) {
           loginError.textContent = err.message || "帳號或密碼錯誤";
@@ -194,6 +287,7 @@
 
       async function sendMessage() {
         const message = messageInput.value.trim();
+        const selectedAllergens = Array.from(allergenSelect.selectedOptions).map((opt) => opt.value);
         if (!message) return;
 
         chatError.textContent = "";
@@ -202,12 +296,26 @@
         sendBtn.disabled = true;
 
         try {
+          const composedMessage = [
+            `過敏原目標：${selectedAllergens.join("、") || "未選擇"}`,
+            `圖片：${uploadedImageName || "未上傳"}`,
+            `使用者問題：${message}`,
+          ].join("\n");
+
           const res = await fetch("/chat", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ message }),
+            body: JSON.stringify({
+              group: window.LIYU_GROUP,
+              message: composedMessage,
+              image_data_url:
+                !imagePreview.classList.contains("hidden") &&
+                String(imagePreview.src || "").startsWith("data:image/")
+                  ? String(imagePreview.src)
+                  : null,
+            }),
           });
 
           const data = await res.json();
@@ -224,14 +332,84 @@
         }
       }
 
+      async function startCamera() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          imageMeta.textContent = "此裝置不支援相機功能";
+          return;
+        }
+
+        try {
+          if (cameraStream) stopCamera();
+          cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment" },
+          });
+          cameraPreview.srcObject = cameraStream;
+          cameraPreview.classList.remove("hidden");
+          takePhotoBtn.classList.remove("hidden");
+          imageMeta.textContent = "相機已開啟，請按拍照";
+        } catch (err) {
+          imageMeta.textContent = `無法開啟相機：${err.message || "未知錯誤"}`;
+        }
+      }
+
+      function stopCamera() {
+        if (!cameraStream) return;
+        cameraStream.getTracks().forEach((track) => track.stop());
+        cameraStream = null;
+        cameraPreview.srcObject = null;
+        cameraPreview.classList.add("hidden");
+        takePhotoBtn.classList.add("hidden");
+      }
+
+      function takePhoto() {
+        if (!cameraStream) return;
+        const videoWidth = cameraPreview.videoWidth || 1280;
+        const videoHeight = cameraPreview.videoHeight || 720;
+        const canvas = document.createElement("canvas");
+        canvas.width = videoWidth;
+        canvas.height = videoHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          imageMeta.textContent = "拍照失敗：無法建立畫布";
+          return;
+        }
+        ctx.drawImage(cameraPreview, 0, 0, videoWidth, videoHeight);
+        imagePreview.src = canvas.toDataURL("image/jpeg", 0.92);
+        imagePreview.classList.remove("hidden");
+        uploadedImageName = `camera-shot-${Date.now()}.jpg`;
+        imageMeta.textContent = `已拍照：${uploadedImageName}`;
+        stopCamera();
+      }
+
       loginBtn.addEventListener("click", login);
       passwordEl.addEventListener("keydown", (e) => {
         if (e.key === "Enter") login();
       });
+      imageInput.addEventListener("change", () => {
+        const file = imageInput.files && imageInput.files[0];
+        if (!file) {
+          uploadedImageName = "";
+          imagePreview.classList.add("hidden");
+          imageMeta.textContent = "尚未上傳圖片";
+          return;
+        }
+        stopCamera();
+        uploadedImageName = file.name;
+        imageMeta.textContent = `已上傳：${file.name}`;
+        const reader = new FileReader();
+        reader.onload = () => {
+          imagePreview.src = String(reader.result || "");
+          imagePreview.classList.remove("hidden");
+        };
+        reader.readAsDataURL(file);
+      });
+      startCameraBtn.addEventListener("click", startCamera);
+      takePhotoBtn.addEventListener("click", takePhoto);
       sendBtn.addEventListener("click", sendMessage);
       messageInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") sendMessage();
       });
+      window.addEventListener("beforeunload", stopCamera);
     </script>
   </body>
 </html>
